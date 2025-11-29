@@ -1,0 +1,126 @@
+{
+  "name": "odinsam-gitcommit",
+  "displayName": "gitcommit",
+  "description": "规范化 Git 提交信息，支持 Angular 格式和自定义模板，自动获取版本号",
+  "version": "1.0.2",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://gitee.com/odinsam/vse_git-commit.git"
+  },
+  "publisher": "odinsam",
+  "license": "MIT",
+  "categories": [
+    "Other"
+  ],
+  "icon": "assets/avatar.png",
+  "activationEvents": [
+    "onCommand:odinsamGitCommit.showCommit"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "odinsamGitCommit.showCommit",
+        "title": "规范化 Git 提交",
+        "icon": "$(git-commit)"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "规范化 Git 提交",
+      "properties": {
+        "odinsamGitCommit.showEmoji": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "是否显示 Emoji 图标"
+        },
+        "odinsamGitCommit.maxSubjectWords": {
+          "type": "number",
+          "default": 50,
+          "markdownDescription": "设置 **Subject** 的最大长度，默认 `50`"
+        },
+        "odinsamGitCommit.customCommitType": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "description": "提交类型（如：feat、fix）"
+              },
+              "label": {
+                "type": "string",
+                "description": "显示标签"
+              },
+              "detail": {
+                "type": "string",
+                "description": "详细说明"
+              },
+              "icon": {
+                "type": "string",
+                "description": "图标（Emoji）"
+              }
+            }
+          },
+          "markdownDescription": "自定义添加 Git Commit Type"
+        },
+        "odinsamGitCommit.templates": {
+          "type": "array",
+          "default": [
+            {
+              "templateName": "Angular",
+              "templateContent": "<icon><space><type>(<scope>):<space><subject><enter><body><enter><footer>"
+            }
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "templateName": {
+                "type": "string",
+                "description": "模板名称"
+              },
+              "templateContent": {
+                "type": "string",
+                "description": "模板内容，支持占位符：<icon> <type> <scope> <subject> <body> <footer> <enter> <space>"
+              }
+            }
+          },
+          "markdownDescription": "提交模板配置，支持 Angular 格式"
+        },
+        "odinsamGitCommit.autoVersion": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "是否在提交信息中自动添加版本号（默认：false）。版本号获取优先级：1. 项目配置文件（.gitcommit） 2. Git Tag 3. 提交哈希"
+        }
+      }
+    },
+    "menus": {
+      "scm/title": [
+        {
+          "when": "scmProvider == git",
+          "command": "odinsamGitCommit.showCommit",
+          "group": "navigation",
+          "icon": "$(git-commit)"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "prepackage": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.74.0",
+    "@vscode/vsce": "^2.22.0",
+    "typescript": "^5.0.0"
+  }
+}
+

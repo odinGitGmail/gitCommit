@@ -1,0 +1,22 @@
+# Git Commit 配置文件示例
+# 将此文件重命名为 .gitcommit 放在项目根目录
+
+# 方式1: 直接在配置文件中指定版本号
+projectName=Insurance.Api
+version=1.0.0
+
+# 方式2: 从其他文件中读取版本号
+# projectName=Insurance.Api
+# versionFile=package.json
+
+# 方式3: 使用 JSON 格式
+# {
+#   "projectName": "Insurance.Api",
+#   "version": "1.0.0"
+# }
+# 或
+# {
+#   "projectName": "Insurance.Api",
+#   "versionFile": "package.json"
+# }
+

@@ -1,0 +1,31 @@
+// 单项目配置示例
+{
+  "projectName": "项目名称",
+  "path": "package.json",
+  "versionRegex": "\"version\"\\s*:\\s*\"([\\d.]+)\"",
+  "description": "项目版本号"
+}
+
+// 多项目配置示例（Monorepo）
+// {
+//   "config": [
+//     {
+//       "projectName": "项目名称1",
+//       "path": "aaa/package.json",
+//       "versionRegex": "\"version\"\\s*:\\s*\"([\\d.]+)\"",
+//       "description": "vue 项目版本号"
+//     },
+//     {
+//       "projectName": "项目名称2",
+//       "path": "bbb/bbb.csproj",
+//       "versionRegex": "<Version>([\\d.]+)</Version>",
+//       "description": "c# 项目1版本号"
+//     },
+//     {
+//       "projectName": "项目名称3",
+//       "path": "bbb/ccc.csproj",
+//       "versionRegex": "<Version>([\\d.]+)</Version>",
+//       "description": "c# 项目2版本号"
+//     }
+//   ]
+// }
