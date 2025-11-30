@@ -497,7 +497,181 @@ export function activate(context: vscode.ExtensionContext) {
     };
 
     /**
-     * 选择提交模板
+     * 获取配置文件中的版本号（用于 tag 默认值）
+     */
+    const getConfigVersion = async (): Promise<string | undefined> => {
+        try {
+            const gitExtension = getGitExtension();
+            if (!gitExtension?.enabled) {
+                return undefined;
+            }
+
+            const repo = gitExtension.getAPI(1).repositories[0];
+            if (!repo) {
+                return undefined;
+            }
+
+            const filePath = currentFilePath || vscode.window.activeTextEditor?.document.uri.fsPath;
+            if (!filePath) {
+                return undefined;
+            }
+
+            const version = await ConfigService.getProjectVersion(filePath, currentProjectName);
+            return version || undefined;
+        } catch (error) {
+            console.error('[获取配置版本号] 失败:', error);
+            return undefined;
+        }
+    };
+
+    /**
+     * 创建 Git Tag
+     */
+    const createGitTag = async (): Promise<void> => {
+        try {
+            const gitExtension = getGitExtension();
+            if (!gitExtension?.enabled) {
+                vscode.window.showErrorMessage('Git 扩展未启用');
+                return;
+            }
+
+            const repo = gitExtension.getAPI(1).repositories[0];
+            if (!repo) {
+                vscode.window.showErrorMessage('未找到 Git 仓库');
+                return;
+            }
+
+            const projectRoot = repo.rootUri.fsPath;
+
+            // 获取配置版本号作为默认值
+            const defaultVersion = await getConfigVersion();
+            const defaultTag = defaultVersion ? `v${defaultVersion}` : '';
+
+            // 让用户输入 tag 版本号
+            const tagInput = await vscode.window.showInputBox({
+                prompt: '请输入 Tag 版本号',
+                value: defaultTag,
+                placeHolder: '例如：v1.0.0',
+                validateInput: (value) => {
+                    if (!value || value.trim() === '') {
+                        return 'Tag 版本号不能为空';
+                    }
+                    return null;
+                }
+            });
+
+            if (!tagInput || tagInput.trim() === '') {
+                return;
+            }
+
+            const tagValue = tagInput.trim();
+
+            // 检查 tag 是否已存在
+            try {
+                const { exec } = await import('child_process');
+                const util = await import('util');
+                const execPromise = util.promisify(exec);
+                
+                const existingTags = await execPromise(`git tag -l "${tagValue}"`, { 
+                    cwd: projectRoot,
+                    maxBuffer: 1024 * 1024
+                });
+                
+                if (existingTags.stdout.trim()) {
+                    const overwrite = await vscode.window.showWarningMessage(
+                        `Tag "${tagValue}" 已存在，是否覆盖？`,
+                        { modal: true },
+                        '覆盖',
+                        '取消'
+                    );
+                    
+                    if (overwrite !== '覆盖') {
+                        return;
+                    }
+                    
+                    // 删除已存在的本地 tag
+                    try {
+                        await execPromise(`git tag -d "${tagValue}"`, { 
+                            cwd: projectRoot,
+                            maxBuffer: 1024 * 1024
+                        });
+                        console.log(`[创建 Tag] 已删除已存在的本地 Tag: ${tagValue}`);
+                    } catch (error) {
+                        // 如果删除失败，继续尝试创建（可能会失败，但让用户知道）
+                        console.warn(`[创建 Tag] 删除已存在的 Tag 失败，将继续尝试创建`);
+                    }
+                }
+            } catch (error) {
+                // 检查 tag 时出错，继续执行（可能是网络问题等）
+                console.warn(`[创建 Tag] 检查 Tag 是否存在时出错: ${error}`);
+            }
+
+            // 让用户输入 message
+            const messageInput = await vscode.window.showInputBox({
+                prompt: '请输入 Tag 消息',
+                placeHolder: 'Tag 说明信息',
+                validateInput: (value) => {
+                    if (!value || value.trim() === '') {
+                        return 'Tag 消息不能为空';
+                    }
+                    return null;
+                }
+            });
+
+            if (!messageInput || messageInput.trim() === '') {
+                return;
+            }
+
+            const message = messageInput.trim();
+
+            // 执行 git tag 命令（使用数组形式避免命令注入）
+            const { execFile } = await import('child_process');
+            const util = await import('util');
+            const execFilePromise = util.promisify(execFile);
+            
+            console.log(`[创建 Tag] 执行命令: git tag "${tagValue}" -m "${message}"`);
+            
+            await execFilePromise('git', ['tag', tagValue, '-m', message], {
+                cwd: projectRoot,
+                maxBuffer: 1024 * 1024
+            });
+
+            vscode.window.showInformationMessage(`Tag "${tagValue}" 创建成功`);
+            console.log(`[创建 Tag] ✅ 成功创建 Tag: ${tagValue}`);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`创建 Tag 失败: ${errorMessage}`);
+            console.error(`[创建 Tag] ❌ 失败: ${errorMessage}`);
+        }
+    };
+
+    /**
+     * 选择操作类型（Tag 或 Commit）
+     */
+    const selectOperationType = async (): Promise<'tag' | 'commit' | null> => {
+        const options = [
+            {
+                label: '$(tag) Tag',
+                detail: '创建 Git Tag',
+                value: 'tag' as const
+            },
+            {
+                label: '$(git-commit) Commit',
+                detail: '提交代码',
+                value: 'commit' as const
+            }
+        ];
+
+        const selected = await vscode.window.showQuickPick(options, {
+            placeHolder: '请选择操作类型',
+            ignoreFocusOut: false
+        });
+
+        return selected?.value || null;
+    };
+
+    /**
+     * 选择提交模板（Commit 流程中使用，不添加版本信息）
      */
     const selectTemplate = async () => {
         CommitDetailQuickPickOptions.placeHolder = '选择提交使用的模板';
@@ -536,8 +710,17 @@ export function activate(context: vscode.ExtensionContext) {
         // 检查配置文件并让用户选择项目（如果是多项目配置）
         await checkAndSelectProject();
 
-        // 然后继续提交流程
-        await selectTemplate();
+        // 选择操作类型（Tag 或 Commit）
+        const operationType = await selectOperationType();
+
+        if (operationType === 'tag') {
+            // Tag 流程
+            await createGitTag();
+        } else if (operationType === 'commit') {
+            // Commit 流程：选择模板
+            await selectTemplate();
+        }
+        // 如果用户取消选择，不做任何操作
     });
 
     context.subscriptions.push(disposable);
