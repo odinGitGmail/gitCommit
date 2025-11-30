@@ -2,7 +2,7 @@
   "name": "odinsam-gitcommit",
   "displayName": "gitcommit",
   "description": "规范化 Git 提交信息，支持 Angular 格式和自定义模板，自动获取版本号",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "engines": {
     "vscode": "^1.74.0"
   },
@@ -123,4 +123,3 @@
     "typescript": "^5.0.0"
   }
 }
-
