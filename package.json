@@ -160,7 +160,8 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "package": "vsce package",
-    "prepackage": "npm run compile"
+    "prepackage": "npm run compile",
+    "package:publish":"vsce package --baseContentUrl https://gitee.com/odinsam/vse_git-commit --baseImagesUrl https://gitee.com/odinsam/vse_git-commit --allow-missing-repository"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
