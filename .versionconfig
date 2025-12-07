@@ -4,7 +4,11 @@
       "path": "package.json",
       "versionRegex": "\"version\"\\s*:\\s*\"([\\d.]+)\"",
       "description": "项目版本号"
+    },
+    {
+      "path": "readme.md",
+      "versionRegex": "!\\[Version\\]\\(https://img\\.shields\\.io/badge/version-([\\d.]+)-blue\\.svg\\)",
+      "description": "项目版本号"
     }
   ]
 }
-

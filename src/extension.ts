@@ -14,6 +14,7 @@ import CommitInputType from './config/commit-input';
 import { VersionService } from './services/versionService';
 import { TemplateService } from './services/templateService';
 import { ConfigService } from './services/configService';
+import { GitFlowService } from './services/gitFlowService';
 
 /**
  * 是否显示 Emoji 图标
@@ -496,179 +497,6 @@ export function activate(context: vscode.ExtensionContext) {
         }
     };
 
-    /**
-     * 获取配置文件中的版本号（用于 tag 默认值）
-     */
-    const getConfigVersion = async (): Promise<string | undefined> => {
-        try {
-            const gitExtension = getGitExtension();
-            if (!gitExtension?.enabled) {
-                return undefined;
-            }
-
-            const repo = gitExtension.getAPI(1).repositories[0];
-            if (!repo) {
-                return undefined;
-            }
-
-            const filePath = currentFilePath || vscode.window.activeTextEditor?.document.uri.fsPath;
-            if (!filePath) {
-                return undefined;
-            }
-
-            const version = await ConfigService.getProjectVersion(filePath, currentProjectName);
-            return version || undefined;
-        } catch (error) {
-            console.error('[获取配置版本号] 失败:', error);
-            return undefined;
-        }
-    };
-
-    /**
-     * 创建 Git Tag
-     */
-    const createGitTag = async (): Promise<void> => {
-        try {
-            const gitExtension = getGitExtension();
-            if (!gitExtension?.enabled) {
-                vscode.window.showErrorMessage('Git 扩展未启用');
-                return;
-            }
-
-            const repo = gitExtension.getAPI(1).repositories[0];
-            if (!repo) {
-                vscode.window.showErrorMessage('未找到 Git 仓库');
-                return;
-            }
-
-            const projectRoot = repo.rootUri.fsPath;
-
-            // 获取配置版本号作为默认值
-            const defaultVersion = await getConfigVersion();
-            const defaultTag = defaultVersion ? `v${defaultVersion}` : '';
-
-            // 让用户输入 tag 版本号
-            const tagInput = await vscode.window.showInputBox({
-                prompt: '请输入 Tag 版本号',
-                value: defaultTag,
-                placeHolder: '例如：v1.0.0',
-                validateInput: (value) => {
-                    if (!value || value.trim() === '') {
-                        return 'Tag 版本号不能为空';
-                    }
-                    return null;
-                }
-            });
-
-            if (!tagInput || tagInput.trim() === '') {
-                return;
-            }
-
-            const tagValue = tagInput.trim();
-
-            // 检查 tag 是否已存在
-            try {
-                const { exec } = await import('child_process');
-                const util = await import('util');
-                const execPromise = util.promisify(exec);
-                
-                const existingTags = await execPromise(`git tag -l "${tagValue}"`, { 
-                    cwd: projectRoot,
-                    maxBuffer: 1024 * 1024
-                });
-                
-                if (existingTags.stdout.trim()) {
-                    const overwrite = await vscode.window.showWarningMessage(
-                        `Tag "${tagValue}" 已存在，是否覆盖？`,
-                        { modal: true },
-                        '覆盖',
-                        '取消'
-                    );
-                    
-                    if (overwrite !== '覆盖') {
-                        return;
-                    }
-                    
-                    // 删除已存在的本地 tag
-                    try {
-                        await execPromise(`git tag -d "${tagValue}"`, { 
-                            cwd: projectRoot,
-                            maxBuffer: 1024 * 1024
-                        });
-                        console.log(`[创建 Tag] 已删除已存在的本地 Tag: ${tagValue}`);
-                    } catch (error) {
-                        // 如果删除失败，继续尝试创建（可能会失败，但让用户知道）
-                        console.warn(`[创建 Tag] 删除已存在的 Tag 失败，将继续尝试创建`);
-                    }
-                }
-            } catch (error) {
-                // 检查 tag 时出错，继续执行（可能是网络问题等）
-                console.warn(`[创建 Tag] 检查 Tag 是否存在时出错: ${error}`);
-            }
-
-            // 让用户输入 message
-            const messageInput = await vscode.window.showInputBox({
-                prompt: '请输入 Tag 消息',
-                placeHolder: 'Tag 说明信息',
-                validateInput: (value) => {
-                    if (!value || value.trim() === '') {
-                        return 'Tag 消息不能为空';
-                    }
-                    return null;
-                }
-            });
-
-            if (!messageInput || messageInput.trim() === '') {
-                return;
-            }
-
-            const message = messageInput.trim();
-
-            // 执行 git tag 命令（使用数组形式避免命令注入）
-            const { execFile } = await import('child_process');
-            const util = await import('util');
-            const execFilePromise = util.promisify(execFile);
-            
-            console.log(`[创建 Tag] 执行命令: git tag "${tagValue}" -m "${message}"`);
-            
-            await execFilePromise('git', ['tag', tagValue, '-m', message], {
-                cwd: projectRoot,
-                maxBuffer: 1024 * 1024
-            });
-
-            vscode.window.showInformationMessage(`Tag "${tagValue}" 创建成功`);
-            console.log(`[创建 Tag] ✅ 成功创建 Tag: ${tagValue}`);
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            vscode.window.showErrorMessage(`创建 Tag 失败: ${errorMessage}`);
-            console.error(`[创建 Tag] ❌ 失败: ${errorMessage}`);
-        }
-    };
-
-    /**
-     * 选择操作类型（Tag 或 Commit）
-     */
-    const selectOperationType = async (): Promise<'tag' | 'commit' | null> => {
-        const options = [
-            {
-                label: '$(tag) Tag',
-                detail: '创建 Git Tag',
-                value: 'tag' as const
-            },
-            {
-                label: '$(git-commit) Commit',
-                detail: '提交代码',
-                value: 'commit' as const
-            }
-        ];
-
-        const selected = await vscode.window.showQuickPick(options, {
-            placeHolder: '请选择操作类型',
-            ignoreFocusOut: false
-        });
-
-        return selected?.value || null;
-    };
 
     /**
      * 选择提交模板（Commit 流程中使用，不添加版本信息）
@@ -710,20 +538,575 @@ export function activate(context: vscode.ExtensionContext) {
         // 检查配置文件并让用户选择项目（如果是多项目配置）
         await checkAndSelectProject();
 
-        // 选择操作类型（Tag 或 Commit）
-        const operationType = await selectOperationType();
-
-        if (operationType === 'tag') {
-            // Tag 流程
-            await createGitTag();
-        } else if (operationType === 'commit') {
-            // Commit 流程：选择模板
-            await selectTemplate();
-        }
-        // 如果用户取消选择，不做任何操作
+        // 直接进入 Commit 流程
+        await selectTemplate();
     });
 
     context.subscriptions.push(disposable);
+
+    // ==================== Git Flow 命令 ====================
+
+    /**
+     * Git Flow 快速操作面板
+     */
+    const gitFlowShow = vscode.commands.registerCommand('odinsamGitCommit.gitFlow.show', async () => {
+        // 首先检查是否在 Git 仓库中
+        const isGitRepo = await GitFlowService.isGitRepository();
+        if (!isGitRepo) {
+            vscode.window.showWarningMessage('当前不在 Git 仓库中，请先打开一个 Git 仓库');
+            return;
+        }
+
+        // 检测当前分支类型和分支名称
+        const currentBranchType = await GitFlowService.getCurrentBranchType();
+        let currentBranchName = '';
+        
+        try {
+            const gitExtension = getGitExtension();
+            if (gitExtension?.enabled) {
+                const repo = gitExtension.getAPI(1).repositories[0];
+                if (repo) {
+                    // 使用 VSCode Git API 获取当前分支
+                    const state = repo.state;
+                    if (state.HEAD && state.HEAD.name) {
+                        currentBranchName = state.HEAD.name;
+                    } else {
+                        // 如果 VSCode API 不可用，使用 git 命令
+                        const repoRoot = repo.rootUri.fsPath;
+                        const { execFile } = await import('child_process');
+                        const util = await import('util');
+                        const execFilePromise = util.promisify(execFile);
+                        const result = await execFilePromise('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+                            cwd: repoRoot,
+                            maxBuffer: 1024 * 1024
+                        });
+                        currentBranchName = result.stdout.trim();
+                    }
+                }
+            }
+        } catch (error) {
+            console.log('[Git Flow] 获取当前分支名称失败:', error);
+        }
+
+        const options: Array<{ label: string; detail: string; value: string }> = [];
+
+        // 根据当前分支类型，优先显示相关操作
+        if (currentBranchType === 'feature') {
+            // 当前在 Feature 分支上，优先显示完成操作
+            options.push({
+                label: `$(check) 完成当前 Feature 分支`,
+                detail: `完成当前分支 "${currentBranchName}" 并合并到 develop`,
+                value: 'feature-finish-current'
+            });
+            options.push({
+                label: '$(git-branch) Feature: 开始新的',
+                detail: '从 develop 创建新的 Feature 分支',
+                value: 'feature-start'
+            });
+            options.push({
+                label: '$(check) Feature: 完成其他',
+                detail: '完成其他 Feature 分支并合并到 develop',
+                value: 'feature-finish'
+            });
+        } else if (currentBranchType === 'release') {
+            // 当前在 Release 分支上，优先显示完成操作
+            options.push({
+                label: `$(tag) 完成当前 Release 分支`,
+                detail: `完成当前分支 "${currentBranchName}"，合并到 master 和 develop，创建标签`,
+                value: 'release-finish-current'
+            });
+            options.push({
+                label: '$(rocket) Release: 开始新的',
+                detail: '从 develop 创建新的 Release 分支',
+                value: 'release-start'
+            });
+            options.push({
+                label: '$(tag) Release: 完成其他',
+                detail: '完成其他 Release 分支，合并到 master 和 develop，创建标签',
+                value: 'release-finish'
+            });
+        } else if (currentBranchType === 'hotfix') {
+            // 当前在 Hotfix 分支上，优先显示完成操作
+            options.push({
+                label: `$(tools) 完成当前 Hotfix 分支`,
+                detail: `完成当前分支 "${currentBranchName}"，合并到 master 和 develop，创建标签`,
+                value: 'hotfix-finish-current'
+            });
+            options.push({
+                label: '$(warning) Hotfix: 开始新的',
+                detail: '从 master 创建新的 Hotfix 分支',
+                value: 'hotfix-start'
+            });
+            options.push({
+                label: '$(tools) Hotfix: 完成其他',
+                detail: '完成其他 Hotfix 分支，合并到 master 和 develop，创建标签',
+                value: 'hotfix-finish'
+            });
+        } else {
+            // 不在任何 Git Flow 分支上，显示所有操作
+            const isInitialized = await GitFlowService.isInitialized();
+            if (!isInitialized) {
+                options.push({
+                    label: '$(settings-gear) 初始化 Git Flow',
+                    detail: '初始化 Git Flow 工作流程',
+                    value: 'init'
+                });
+            }
+            
+            options.push({
+                label: '$(git-branch) Feature: 开始',
+                detail: '从 develop 创建新的 Feature 分支',
+                value: 'feature-start'
+            });
+            options.push({
+                label: '$(check) Feature: 完成',
+                detail: '完成 Feature 分支并合并到 develop',
+                value: 'feature-finish'
+            });
+            options.push({
+                label: '$(rocket) Release: 开始',
+                detail: '从 develop 创建新的 Release 分支',
+                value: 'release-start'
+            });
+            options.push({
+                label: '$(tag) Release: 完成',
+                detail: '完成 Release 分支，合并到 master 和 develop，创建标签',
+                value: 'release-finish'
+            });
+            options.push({
+                label: '$(warning) Hotfix: 开始',
+                detail: '从 master 创建新的 Hotfix 分支',
+                value: 'hotfix-start'
+            });
+            options.push({
+                label: '$(tools) Hotfix: 完成',
+                detail: '完成 Hotfix 分支，合并到 master 和 develop，创建标签',
+                value: 'hotfix-finish'
+            });
+        }
+
+        const selected = await vscode.window.showQuickPick(options, {
+            placeHolder: currentBranchType 
+                ? `当前在 ${currentBranchType} 分支 "${currentBranchName}"，选择操作` 
+                : '选择 Git Flow 操作',
+            ignoreFocusOut: false
+        });
+
+        if (!selected) {
+            return;
+        }
+
+        // 根据选择执行相应的命令
+        switch (selected.value) {
+            case 'init':
+                await vscode.commands.executeCommand('odinsamGitCommit.gitFlow.init');
+                break;
+            case 'feature-start':
+                await vscode.commands.executeCommand('odinsamGitCommit.gitFlow.feature.start');
+                break;
+            case 'feature-finish':
+                await vscode.commands.executeCommand('odinsamGitCommit.gitFlow.feature.finish');
+                break;
+            case 'feature-finish-current':
+                // 完成当前 Feature 分支
+                if (currentBranchName) {
+                    const featureName = currentBranchName.replace(/^feature\//, '');
+                    try {
+                        const keepBranch = await vscode.window.showQuickPick(
+                            [
+                                { label: '删除分支', value: false },
+                                { label: '保留分支', value: true }
+                            ],
+                            {
+                                placeHolder: '是否保留分支？'
+                            }
+                        );
+                        await GitFlowService.finishFeature(featureName, keepBranch?.value || false);
+                        vscode.window.showInformationMessage(`Feature 分支 "${currentBranchName}" 已完成！`);
+                    } catch (error) {
+                        const errorMessage = error instanceof Error ? error.message : String(error);
+                        vscode.window.showErrorMessage(`完成 Feature 分支失败: ${errorMessage}`);
+                    }
+                }
+                break;
+            case 'release-start':
+                await vscode.commands.executeCommand('odinsamGitCommit.gitFlow.release.start');
+                break;
+            case 'release-finish':
+                await vscode.commands.executeCommand('odinsamGitCommit.gitFlow.release.finish');
+                break;
+            case 'release-finish-current':
+                // 完成当前 Release 分支
+                if (currentBranchName) {
+                    const version = currentBranchName.replace(/^release\//, '');
+                    try {
+                        const tagMessage = await vscode.window.showInputBox({
+                            prompt: 'Tag 消息（可选）',
+                            placeHolder: `Release ${version}`
+                        });
+                        const keepBranch = await vscode.window.showQuickPick(
+                            [
+                                { label: '删除分支', value: false },
+                                { label: '保留分支', value: true }
+                            ],
+                            {
+                                placeHolder: '是否保留分支？'
+                            }
+                        );
+                        await GitFlowService.finishRelease(version, keepBranch?.value || false, tagMessage?.trim());
+                        vscode.window.showInformationMessage(`Release 分支 "${currentBranchName}" 已完成！`);
+                    } catch (error) {
+                        const errorMessage = error instanceof Error ? error.message : String(error);
+                        vscode.window.showErrorMessage(`完成 Release 分支失败: ${errorMessage}`);
+                    }
+                }
+                break;
+            case 'hotfix-start':
+                await vscode.commands.executeCommand('odinsamGitCommit.gitFlow.hotfix.start');
+                break;
+            case 'hotfix-finish':
+                await vscode.commands.executeCommand('odinsamGitCommit.gitFlow.hotfix.finish');
+                break;
+            case 'hotfix-finish-current':
+                // 完成当前 Hotfix 分支
+                if (currentBranchName) {
+                    const version = currentBranchName.replace(/^hotfix\//, '');
+                    try {
+                        const tagMessage = await vscode.window.showInputBox({
+                            prompt: 'Tag 消息（可选）',
+                            placeHolder: `Hotfix ${version}`
+                        });
+                        const keepBranch = await vscode.window.showQuickPick(
+                            [
+                                { label: '删除分支', value: false },
+                                { label: '保留分支', value: true }
+                            ],
+                            {
+                                placeHolder: '是否保留分支？'
+                            }
+                        );
+                        await GitFlowService.finishHotfix(version, keepBranch?.value || false, tagMessage?.trim());
+                        vscode.window.showInformationMessage(`Hotfix 分支 "${currentBranchName}" 已完成！`);
+                    } catch (error) {
+                        const errorMessage = error instanceof Error ? error.message : String(error);
+                        vscode.window.showErrorMessage(`完成 Hotfix 分支失败: ${errorMessage}`);
+                    }
+                }
+                break;
+        }
+    });
+
+    context.subscriptions.push(gitFlowShow);
+
+    // ==================== Git Flow 命令 ====================
+
+    /**
+     * Git Flow 初始化
+     */
+    const gitFlowInit = vscode.commands.registerCommand('odinsamGitCommit.gitFlow.init', async () => {
+        try {
+            const isInitialized = await GitFlowService.isInitialized();
+            if (isInitialized) {
+                const overwrite = await vscode.window.showWarningMessage(
+                    'Git Flow 已初始化，是否重新初始化？',
+                    { modal: true },
+                    '重新初始化',
+                    '取消'
+                );
+                if (overwrite !== '重新初始化') {
+                    return;
+                }
+            }
+
+            // 询问配置选项
+            const masterBranch = await vscode.window.showInputBox({
+                prompt: '主分支名称',
+                value: 'master',
+                placeHolder: '例如：master 或 main'
+            });
+            if (!masterBranch) return;
+
+            const developBranch = await vscode.window.showInputBox({
+                prompt: '开发分支名称',
+                value: 'develop',
+                placeHolder: '例如：develop'
+            });
+            if (!developBranch) return;
+
+            await GitFlowService.init({
+                masterBranch: masterBranch.trim(),
+                developBranch: developBranch.trim()
+            });
+
+            vscode.window.showInformationMessage('Git Flow 初始化成功！');
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Git Flow 初始化失败: ${errorMessage}`);
+        }
+    });
+
+    /**
+     * 开始 Feature 分支
+     */
+    const gitFlowFeatureStart = vscode.commands.registerCommand('odinsamGitCommit.gitFlow.feature.start', async () => {
+        try {
+            // 检查是否在 Git 仓库中
+            const isGitRepo = await GitFlowService.isGitRepository();
+            if (!isGitRepo) {
+                vscode.window.showWarningMessage('当前不在 Git 仓库中，请先打开一个 Git 仓库');
+                return;
+            }
+
+            const featureName = await vscode.window.showInputBox({
+                prompt: '请输入 Feature 名称',
+                placeHolder: '例如：user-login',
+                validateInput: (value) => {
+                    if (!value || value.trim() === '') {
+                        return 'Feature 名称不能为空';
+                    }
+                    if (!/^[a-z0-9-]+$/i.test(value)) {
+                        return 'Feature 名称只能包含字母、数字和连字符';
+                    }
+                    return null;
+                }
+            });
+
+            if (!featureName) return;
+
+            await GitFlowService.startFeature(featureName.trim());
+            vscode.window.showInformationMessage(`Feature 分支 "${featureName}" 已创建并切换！`);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`创建 Feature 分支失败: ${errorMessage}`);
+        }
+    });
+
+    /**
+     * 完成 Feature 分支
+     */
+    const gitFlowFeatureFinish = vscode.commands.registerCommand('odinsamGitCommit.gitFlow.feature.finish', async () => {
+        try {
+            // 检查是否在 Git 仓库中
+            const isGitRepo = await GitFlowService.isGitRepository();
+            if (!isGitRepo) {
+                vscode.window.showWarningMessage('当前不在 Git 仓库中，请先打开一个 Git 仓库');
+                return;
+            }
+
+            const branches = await GitFlowService.getFeatureBranches();
+            if (branches.length === 0) {
+                vscode.window.showWarningMessage('没有找到 Feature 分支');
+                return;
+            }
+
+            const selected = await vscode.window.showQuickPick(
+                branches.map(b => ({
+                    label: b,
+                    value: b
+                })),
+                {
+                    placeHolder: '选择要完成的 Feature 分支'
+                }
+            );
+
+            if (!selected) return;
+
+            const featureName = selected.value.replace(/^feature\//, '');
+            const keepBranch = await vscode.window.showQuickPick(
+                [
+                    { label: '删除分支', value: false },
+                    { label: '保留分支', value: true }
+                ],
+                {
+                    placeHolder: '是否保留分支？'
+                }
+            );
+
+            await GitFlowService.finishFeature(featureName, keepBranch?.value || false);
+            vscode.window.showInformationMessage(`Feature 分支 "${selected.value}" 已完成！`);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`完成 Feature 分支失败: ${errorMessage}`);
+        }
+    });
+
+    /**
+     * 开始 Release 分支
+     */
+    const gitFlowReleaseStart = vscode.commands.registerCommand('odinsamGitCommit.gitFlow.release.start', async () => {
+        try {
+            const version = await vscode.window.showInputBox({
+                prompt: '请输入版本号',
+                placeHolder: '例如：1.0.0',
+                validateInput: (value) => {
+                    if (!value || value.trim() === '') {
+                        return '版本号不能为空';
+                    }
+                    return null;
+                }
+            });
+
+            if (!version) return;
+
+            await GitFlowService.startRelease(version.trim());
+            vscode.window.showInformationMessage(`Release 分支 "${version}" 已创建并切换！`);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`创建 Release 分支失败: ${errorMessage}`);
+        }
+    });
+
+    /**
+     * 完成 Release 分支
+     */
+    const gitFlowReleaseFinish = vscode.commands.registerCommand('odinsamGitCommit.gitFlow.release.finish', async () => {
+        try {
+            // 检查是否在 Git 仓库中
+            const isGitRepo = await GitFlowService.isGitRepository();
+            if (!isGitRepo) {
+                vscode.window.showWarningMessage('当前不在 Git 仓库中，请先打开一个 Git 仓库');
+                return;
+            }
+
+            const branches = await GitFlowService.getReleaseBranches();
+            if (branches.length === 0) {
+                vscode.window.showWarningMessage('没有找到 Release 分支');
+                return;
+            }
+
+            const selected = await vscode.window.showQuickPick(
+                branches.map(b => ({
+                    label: b,
+                    value: b
+                })),
+                {
+                    placeHolder: '选择要完成的 Release 分支'
+                }
+            );
+
+            if (!selected) return;
+
+            const version = selected.value.replace(/^release\//, '');
+            const tagMessage = await vscode.window.showInputBox({
+                prompt: 'Tag 消息（可选）',
+                placeHolder: `Release ${version}`
+            });
+
+            const keepBranch = await vscode.window.showQuickPick(
+                [
+                    { label: '删除分支', value: false },
+                    { label: '保留分支', value: true }
+                ],
+                {
+                    placeHolder: '是否保留分支？'
+                }
+            );
+
+            await GitFlowService.finishRelease(version, keepBranch?.value || false, tagMessage?.trim());
+            vscode.window.showInformationMessage(`Release 分支 "${selected.value}" 已完成！`);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`完成 Release 分支失败: ${errorMessage}`);
+        }
+    });
+
+    /**
+     * 开始 Hotfix 分支
+     */
+    const gitFlowHotfixStart = vscode.commands.registerCommand('odinsamGitCommit.gitFlow.hotfix.start', async () => {
+        try {
+            // 检查是否在 Git 仓库中
+            const isGitRepo = await GitFlowService.isGitRepository();
+            if (!isGitRepo) {
+                vscode.window.showWarningMessage('当前不在 Git 仓库中，请先打开一个 Git 仓库');
+                return;
+            }
+
+            const version = await vscode.window.showInputBox({
+                prompt: '请输入版本号',
+                placeHolder: '例如：1.0.1',
+                validateInput: (value) => {
+                    if (!value || value.trim() === '') {
+                        return '版本号不能为空';
+                    }
+                    return null;
+                }
+            });
+
+            if (!version) return;
+
+            await GitFlowService.startHotfix(version.trim());
+            vscode.window.showInformationMessage(`Hotfix 分支 "${version}" 已创建并切换！`);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`创建 Hotfix 分支失败: ${errorMessage}`);
+        }
+    });
+
+    /**
+     * 完成 Hotfix 分支
+     */
+    const gitFlowHotfixFinish = vscode.commands.registerCommand('odinsamGitCommit.gitFlow.hotfix.finish', async () => {
+        try {
+            // 检查是否在 Git 仓库中
+            const isGitRepo = await GitFlowService.isGitRepository();
+            if (!isGitRepo) {
+                vscode.window.showWarningMessage('当前不在 Git 仓库中，请先打开一个 Git 仓库');
+                return;
+            }
+
+            const branches = await GitFlowService.getHotfixBranches();
+            if (branches.length === 0) {
+                vscode.window.showWarningMessage('没有找到 Hotfix 分支');
+                return;
+            }
+
+            const selected = await vscode.window.showQuickPick(
+                branches.map(b => ({
+                    label: b,
+                    value: b
+                })),
+                {
+                    placeHolder: '选择要完成的 Hotfix 分支'
+                }
+            );
+
+            if (!selected) return;
+
+            const version = selected.value.replace(/^hotfix\//, '');
+            const tagMessage = await vscode.window.showInputBox({
+                prompt: 'Tag 消息（可选）',
+                placeHolder: `Hotfix ${version}`
+            });
+
+            const keepBranch = await vscode.window.showQuickPick(
+                [
+                    { label: '删除分支', value: false },
+                    { label: '保留分支', value: true }
+                ],
+                {
+                    placeHolder: '是否保留分支？'
+                }
+            );
+
+            await GitFlowService.finishHotfix(version, keepBranch?.value || false, tagMessage?.trim());
+            vscode.window.showInformationMessage(`Hotfix 分支 "${selected.value}" 已完成！`);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`完成 Hotfix 分支失败: ${errorMessage}`);
+        }
+    });
+
+    // 注册所有 Git Flow 命令
+    context.subscriptions.push(
+        gitFlowInit,
+        gitFlowFeatureStart,
+        gitFlowFeatureFinish,
+        gitFlowReleaseStart,
+        gitFlowReleaseFinish,
+        gitFlowHotfixStart,
+        gitFlowHotfixFinish
+    );
 }
 
 /**

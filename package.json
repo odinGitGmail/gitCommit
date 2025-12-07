@@ -2,7 +2,7 @@
   "name": "odinsam-gitcommit",
   "displayName": "gitcommit",
   "description": "规范化 Git 提交信息，支持 Angular 格式和自定义模板，自动获取版本号",
-  "version": "1.0.4",
+  "version": "2.0.0",
   "engines": {
     "vscode": "^1.74.0"
   },
@@ -26,6 +26,46 @@
         "command": "odinsamGitCommit.showCommit",
         "title": "规范化 Git 提交",
         "icon": "$(git-commit)"
+      },
+      {
+        "command": "odinsamGitCommit.gitFlow.init",
+        "title": "Git Flow: 初始化",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "odinsamGitCommit.gitFlow.feature.start",
+        "title": "Git Flow: 开始 Feature",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "odinsamGitCommit.gitFlow.feature.finish",
+        "title": "Git Flow: 完成 Feature",
+        "icon": "$(check)"
+      },
+      {
+        "command": "odinsamGitCommit.gitFlow.release.start",
+        "title": "Git Flow: 开始 Release",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "odinsamGitCommit.gitFlow.release.finish",
+        "title": "Git Flow: 完成 Release",
+        "icon": "$(tag)"
+      },
+      {
+        "command": "odinsamGitCommit.gitFlow.hotfix.start",
+        "title": "Git Flow: 开始 Hotfix",
+        "icon": "$(warning)"
+      },
+      {
+        "command": "odinsamGitCommit.gitFlow.hotfix.finish",
+        "title": "Git Flow: 完成 Hotfix",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "odinsamGitCommit.gitFlow.show",
+        "title": "Git Flow",
+        "icon": "$(git-branch-create)"
       }
     ],
     "configuration": {
@@ -105,6 +145,12 @@
           "command": "odinsamGitCommit.showCommit",
           "group": "navigation",
           "icon": "$(git-commit)"
+        },
+        {
+          "when": "scmProvider == git",
+          "command": "odinsamGitCommit.gitFlow.show",
+          "group": "navigation",
+          "icon": "$(git-branch-create)"
         }
       ]
     }
