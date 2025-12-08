@@ -1,6 +1,13 @@
 # 规范化 Git 提交
 
-VSCode 扩展：规范化 Git 提交信息，支持 Angular 格式和自定义模板，自动获取版本号，支持创建 Git Tag。
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://gitee.com/odinsam/vse_git-commit)
+[![VSCode](https://img.shields.io/badge/VSCode-%3E%3D1.74.0-blue.svg)](https://code.visualstudio.com/)
+[![Author](https://img.shields.io/badge/author-odinsam-green.svg)](https://www.odinsam.com)
+
+VSCode 扩展：规范化 Git 提交信息，支持 Angular 格式和自定义模板，自动获取版本号，完整的 Git Flow 工作流程支持。
+
+**作者**: [odinsam](https://www.odinsam.com)
 
 ## 功能特性
 
@@ -11,9 +18,10 @@ VSCode 扩展：规范化 Git 提交信息，支持 Angular 格式和自定义�
 - ✅ 支持 Emoji 图标（可配置）
 - ✅ 交互式提交信息填写
 - ✅ 支持多仓库工作区
-- ✅ 支持创建 Git Tag
 - ✅ 支持多项目配置（Monorepo）
 - ✅ 自动从配置文件读取版本号
+- ✅ 完整的 Git Flow 工作流程支持
+- ✅ 智能分支检测和操作推荐
 
 ## 安装
 
@@ -29,22 +37,13 @@ VSCode 扩展：规范化 Git 提交信息，支持 Angular 格式和自定义�
 ### 基本使用
 
 1. 在 VSCode 中打开包含 Git 仓库的项目
-2. 在源代码管理（SCM）面板中，点击提交按钮旁的图标
-3. 或者使用命令面板（`Ctrl+Shift+P` / `Cmd+Shift+P`），输入 "规范化 Git 提交"
-4. 选择操作类型（Tag 或 Commit）
-5. 按照提示完成相应操作
-
-### 使用流程
-
-#### 1. 选择操作类型
-
-每次使用时会提示选择操作类型：
-- **Tag**：创建 Git Tag
-- **Commit**：提交代码
+2. 在源代码管理（SCM）面板中，点击提交按钮旁的图标进行提交
+3. 点击 Git Flow 按钮（分支图标）进行 Git Flow 操作
+4. 或者使用命令面板（`Ctrl+Shift+P` / `Cmd+Shift+P`），输入相关命令
 
 > **注意**：在使用前，扩展会自动检查是否存在 `.gitcommit` 配置文件。如果不存在，会询问是否创建配置文件。
 
-#### 2. Commit 流程
+### Commit 流程
 
 1. **选择模板**：选择提交使用的模板（默认 Angular 格式）
 2. **选择类型**：选择提交类型（feat、fix、docs 等）
@@ -55,14 +54,74 @@ VSCode 扩展：规范化 Git 提交信息，支持 Angular 格式和自定义�
    - Footer（可选）：备注信息
 4. **完成**：提交信息会自动填充到 Git 提交输入框，如果启用了 `autoVersion`，会自动添加版本信息
 
-#### 3. Tag 流程
+### Git Flow 工作流程
 
-1. **输入 Tag 版本号**：默认值为 `.gitcommit` 配置文件中解析的版本号（格式：`v版本号`）
-2. **输入 Tag 消息**：Tag 的说明信息
-3. **执行命令**：自动执行 `git tag v版本号 -m "message"` 命令
-4. **完成**：Tag 创建成功后会显示提示信息
+Git Flow 是一个 Git 分支管理模型，帮助团队更好地管理代码发布流程。
 
-> **注意**：如果 Tag 已存在，会询问是否覆盖。
+#### 快速开始
+
+1. **初始化 Git Flow**：
+   - 点击 SCM 面板的 Git Flow 按钮
+   - 选择"初始化 Git Flow"
+   - 设置主分支名称（master/main）和开发分支名称（develop）
+
+2. **使用 Git Flow**：
+   - 点击 SCM 面板的 Git Flow 按钮
+   - 根据当前分支类型，扩展会智能显示相关操作
+   - 选择要执行的操作
+
+#### 分支类型说明
+
+**主分支（Master/Main）**：
+- 生产环境的稳定代码
+- 每次发布都会在此分支上打标签
+
+**开发分支（Develop）**：
+- 日常开发的主分支
+- 包含即将发布的功能和改进
+
+**Feature 分支**：
+- 从 `develop` 分支创建
+- 用于开发新功能
+- 完成后合并回 `develop`
+
+**Release 分支**：
+- 从 `develop` 分支创建
+- 用于准备新版本发布
+- 完成后合并到 `master` 和 `develop`，并在 `master` 上创建标签
+
+**Hotfix 分支**：
+- 从 `master` 分支创建
+- 用于紧急修复生产环境问题
+- 完成后合并到 `master` 和 `develop`，并在 `master` 上创建标签
+
+#### 智能操作推荐
+
+扩展会根据当前所在的分支类型，智能推荐相关操作：
+
+- **在 Feature 分支上**：优先显示"完成当前 Feature 分支"
+- **在 Release 分支上**：优先显示"完成当前 Release 分支"
+- **在 Hotfix 分支上**：优先显示"完成当前 Hotfix 分支"
+- **在其他分支上**：显示所有可用操作
+
+#### 操作示例
+
+**场景：你在 `feature/user-login` 分支上开发完成**
+
+1. 点击 SCM 面板的 Git Flow 按钮
+2. 选择"完成当前 Feature 分支"
+3. 选择是否保留分支
+4. 自动合并到 `develop` 分支
+
+**场景：准备发布新版本**
+
+1. 点击 SCM 面板的 Git Flow 按钮
+2. 选择"Release: 开始"
+3. 输入版本号（如：1.0.0）
+4. 在 Release 分支上进行测试和修复
+5. 完成后选择"完成当前 Release 分支"
+6. 输入 Tag 消息（可选）
+7. 自动合并到 `master` 和 `develop`，并创建标签
 
 ### 配置选项
 
@@ -203,9 +262,9 @@ feat(缓存): 实现分布式缓存功能
 
 如果使用多项目配置，在提交或创建 Tag 时，扩展会显示项目列表供选择。如果不选择项目，版本号将无效，但提交流程可以继续。
 
-### 2. Tag 版本号默认值来自哪里？
+### 2. Git Flow 中的标签是如何创建的？
 
-Tag 版本号的默认值从 `.gitcommit` 配置文件中解析，格式为 `v版本号`（例如：如果配置文件中的版本号是 `1.0.0`，默认 Tag 值为 `v1.0.0`）。
+在完成 Release 或 Hotfix 分支时，扩展会自动创建标签。标签名称格式为：`[版本标签前缀]版本号`（例如：`v1.0.0`）。可以在完成分支时输入自定义的 Tag 消息。
 
 ### 3. 如何修改配置文件？
 
@@ -226,6 +285,21 @@ Tag 版本号的默认值从 `.gitcommit` 配置文件中解析，格式为 `v�
   "odinsamGitCommit.autoVersion": true
 }
 ```
+
+### 6. Git Flow 是否必须初始化？
+
+是的，使用 Git Flow 功能前需要先初始化。初始化会：
+- 设置主分支和开发分支名称
+- 配置分支前缀（feature/、release/、hotfix/ 等）
+- 如果 develop 分支不存在，会自动创建
+
+### 7. 如果当前不在 Git 仓库中会怎样？
+
+如果当前工作区不是 Git 仓库，扩展会显示友好的提示信息："当前不在 Git 仓库中，请先打开一个 Git 仓库"，不会执行任何操作。
+
+### 8. 如何完成当前分支？
+
+如果当前在 Feature/Release/Hotfix 分支上，点击 Git Flow 按钮后，会优先显示"完成当前 [分支类型] 分支"选项，选择后可以直接完成当前分支，无需手动输入分支名称。
 
 ## 提交类型
 
@@ -286,7 +360,8 @@ odinsam-GitCommit/
 │   ├── services/            # 服务模块
 │   │   ├── versionService.ts # 版本号服务
 │   │   ├── configService.ts  # 配置服务
-│   │   └── templateService.ts # 模板服务
+│   │   ├── templateService.ts # 模板服务
+│   │   └── gitFlowService.ts # Git Flow 服务
 │   ├── types/               # 类型定义
 │   │   ├── git.d.ts         # Git 类型定义
 │   │   └── commit.d.ts      # 提交信息类型定义
@@ -297,6 +372,13 @@ odinsam-GitCommit/
 └── README.md                # 说明文档
 ```
 
+## 作者
+
+**odinsam**
+
+- 网站: [www.odinsam.com](https://www.odinsam.com)
+- 仓库: [Gitee](https://gitee.com/odinsam/vse_git-commit)
+
 ## 许可证
 
-MIT
+本项目采用 [MIT](LICENSE) 许可证。
