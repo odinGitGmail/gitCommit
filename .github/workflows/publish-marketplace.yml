@@ -1,0 +1,59 @@
+name: 发布到 VS Code Marketplace
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: vscode-marketplace-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: 构建并发布扩展
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: vscode-marketplace
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 校验 Tag 与扩展版本
+        shell: bash
+        run: |
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "Tag 版本 $TAG_VERSION 与 package.json 版本 $PACKAGE_VERSION 不一致"
+            exit 1
+          fi
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 编译扩展
+        run: npm run compile
+
+      - name: 打包 VSIX
+        run: npm exec -- vsce package --out extension.vsix
+
+      - name: 保存 VSIX 构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: odinsam-gitcommit-${{ github.ref_name }}
+          path: extension.vsix
+          if-no-files-found: error
+
+      - name: OIDC 发布到 Marketplace
+        run: npm exec -- vsce publish --oidc --packagePath extension.vsix
