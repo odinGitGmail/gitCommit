@@ -15,6 +15,7 @@ import { VersionService } from './services/versionService';
 import { TemplateService } from './services/templateService';
 import { ConfigService } from './services/configService';
 import { GitFlowService } from './services/gitFlowService';
+import { TagService, TagType } from './services/tagService';
 
 /**
  * 是否显示 Emoji 图标
@@ -75,6 +76,17 @@ export function activate(context: vscode.ExtensionContext) {
         CommitDetailType.forEach((item) => {
             item.isEdit = false;
         });
+    }
+
+    /**
+     * 清除提交详情，但保留当前选择的模板
+     */
+    function clearMessageDetails() {
+        const templateName = messageConfig.templateName;
+        const templateContent = messageConfig.templateContent;
+        clearMessage();
+        messageConfig.templateName = templateName;
+        messageConfig.templateContent = templateContent;
     }
 
     /**
@@ -179,107 +191,115 @@ export function activate(context: vscode.ExtensionContext) {
      * 输入提交详情
      * @param key 字段键名
      */
-    const inputMessageDetail = async (key: string | number) => {
+    const inputMessageDetail = async (key: string | number): Promise<void> => {
         const detailType = CommitDetailType.find((item) => item.key === key);
-        CommitInputType.prompt = `${detailType?.description} 👉 ${detailType?.detail}`;
-        const currentValue = (messageConfig as any)[key] ? (messageConfig as any)[key] : '';
+        while (true) {
+            CommitInputType.prompt = `${detailType?.description} 👉 ${detailType?.detail}（按 Esc 返回提交详情）`;
+            const currentValue = (messageConfig as any)[key] ? (messageConfig as any)[key] : '';
 
-        // 所有字段都使用单行输入框
-        CommitInputType.value = currentValue;
-        const inputValue = await vscode.window.showInputBox(CommitInputType);
+            // 所有字段都使用单行输入框
+            CommitInputType.value = currentValue;
+            const inputValue = await vscode.window.showInputBox(CommitInputType);
 
-        // 如果用户取消，返回上一级
-        if (inputValue === undefined) {
-            await recursiveInputMessage(startMessageInput);
-            return;
-        }
-
-        // 保存输入的值
-        (messageConfig as any)[key] = inputValue || '';
-
-        if (detailType) {
-            detailType.isEdit = true;
-        }
-
-        // 验证 Subject 长度
-        if (key === 'subject') {
-            const inputValueLength = inputValue.length;
-            if (inputValueLength > MaxSubjectWords) {
-                vscode.window.showErrorMessage(
-                    `提交概述不能超过 ${MaxSubjectWords} 字，当前输入 ${inputValueLength} 字`,
-                    '确定'
-                );
-                await inputMessageDetail(key);
+            // 按 Esc 返回提交详情列表
+            if (inputValue === undefined) {
                 return;
             }
-        }
 
-        await recursiveInputMessage(startMessageInput);
+            // 验证 Subject 长度
+            if (key === 'subject' && inputValue.length > MaxSubjectWords) {
+                vscode.window.showErrorMessage(
+                    `提交概述不能超过 ${MaxSubjectWords} 字，当前输入 ${inputValue.length} 字`,
+                    '确定'
+                );
+                continue;
+            }
+
+            // 保存输入的值
+            (messageConfig as any)[key] = inputValue || '';
+            if (detailType) {
+                detailType.isEdit = true;
+            }
+            return;
+        }
     };
 
     /**
-     * 递归输入信息
-     * @param startMessageInput 开始输入函数
+     * 输入提交详情
      */
-    const recursiveInputMessage = async (startMessageInput?: () => void) => {
-        CommitDetailQuickPickOptions.placeHolder = '搜索提交描述';
+    const recursiveInputMessage = async (): Promise<'back' | 'done'> => {
+        while (true) {
+            CommitDetailQuickPickOptions.placeHolder = '搜索提交描述';
 
-        const commitDetailTypes: Array<typeof CommitDetailType[0]> = JSON.parse(JSON.stringify(CommitDetailType));
-        commitDetailTypes.forEach((item: any) => {
-            if (item.isEdit) {
-                const value = (messageConfig as any)[item.key || ''] || '';
-                item.description = `${item.description} 👍 >> ${value}`;
+            const commitDetailTypes: Array<typeof CommitDetailType[0]> = JSON.parse(JSON.stringify(CommitDetailType));
+            commitDetailTypes.forEach((item: any) => {
+                if (item.isEdit) {
+                    const value = (messageConfig as any)[item.key || ''] || '';
+                    item.description = `${item.description} 👍 >> ${value}`;
+                }
+            });
+
+            const select = await vscode.window.showQuickPick(commitDetailTypes, CommitDetailQuickPickOptions);
+            if (!select) {
+                clearMessage();
+                return 'done';
             }
-        });
 
-        const select = await vscode.window.showQuickPick(commitDetailTypes, CommitDetailQuickPickOptions);
-        const label = (select && select.label) || '';
-
-        if (label !== '') {
-            const key = select?.key || 'body';
-
+            const key = select.key || 'body';
             if (key === 'complete') {
                 // 完成提交信息编写
                 vscode.commands.executeCommand('workbench.view.scm');
                 const finalMessage = await messageCombine(messageConfig);
                 repo.inputBox.value = finalMessage;
                 clearMessage();
-                return;
+                return 'done';
             }
 
             if (key === 'back') {
                 // 返回选择类型
-                if (startMessageInput) {
-                    startMessageInput();
-                }
-                clearMessage();
-                return;
+                clearMessageDetails();
+                return 'back';
             }
 
             await inputMessageDetail(key);
-        } else {
-            clearMessage();
         }
     };
 
     /**
      * 开始输入提交信息
      */
-    const startMessageInput = async () => {
-        CommitDetailQuickPickOptions.placeHolder = '搜索 Git 提交类型';
+    const startMessageInput = async (): Promise<'back' | 'done'> => {
+        while (true) {
+            CommitDetailQuickPickOptions.placeHolder = '搜索 Git 提交类型';
 
-        const commitTypes = getCommitTypes();
-        const select = await vscode.window.showQuickPick(commitTypes, CommitDetailQuickPickOptions);
+            const commitTypes: Array<CommitType & { isBack?: boolean }> = [
+                ...getCommitTypes(),
+                {
+                    label: '$(arrow-left) 返回上一级',
+                    detail: '返回提交模板选择',
+                    title: '',
+                    icon: '',
+                    isBack: true
+                }
+            ];
+            const select = await vscode.window.showQuickPick(commitTypes, CommitDetailQuickPickOptions);
+            if (!select) {
+                clearMessage();
+                return 'done';
+            }
+            if (select.isBack) {
+                clearMessage();
+                return 'back';
+            }
 
-        const title = (select && select.title) || '';
-        const label = (select && select.label) || '';
-        const icon = (select && select.icon) || '';
+            messageConfig.type = select.title;
+            messageConfig.icon = select.icon;
 
-        messageConfig.type = title;
-        messageConfig.icon = icon;
-
-        if (label !== '') {
-            await recursiveInputMessage(startMessageInput);
+            const navigation = await recursiveInputMessage();
+            if (navigation === 'back') {
+                continue;
+            }
+            return 'done';
         }
     };
 
@@ -501,20 +521,452 @@ export function activate(context: vscode.ExtensionContext) {
     /**
      * 选择提交模板（Commit 流程中使用，不添加版本信息）
      */
-    const selectTemplate = async () => {
-        CommitDetailQuickPickOptions.placeHolder = '选择提交使用的模板';
+    const selectTemplate = async (): Promise<'back' | 'done'> => {
+        while (true) {
+            CommitDetailQuickPickOptions.placeHolder = '选择提交使用的模板';
 
-        const templates = getCommitTemplates();
-        const select = await vscode.window.showQuickPick(templates, CommitDetailQuickPickOptions);
+            const templates: Array<CommitTemplateType & { isBack?: boolean }> = [
+                ...getCommitTemplates(),
+                {
+                    label: '$(arrow-left) 返回上一级',
+                    detail: '返回提交代码或标记管理选择',
+                    templateName: '',
+                    templateContent: '',
+                    isBack: true
+                }
+            ];
+            const select = await vscode.window.showQuickPick(templates, CommitDetailQuickPickOptions);
+            if (!select) {
+                clearMessage();
+                return 'done';
+            }
+            if (select.isBack) {
+                clearMessage();
+                return 'back';
+            }
 
-        const templateName = (select && select.templateName) || '';
-        const templateContent = (select && select.templateContent) || '';
+            messageConfig.templateName = select.templateName;
+            messageConfig.templateContent = select.templateContent;
 
-        messageConfig.templateName = templateName;
-        messageConfig.templateContent = templateContent;
+            const navigation = await startMessageInput();
+            if (navigation === 'back') {
+                continue;
+            }
+            return 'done';
+        }
+    };
 
-        if (templateName !== '') {
-            await startMessageInput();
+    /**
+     * 选择远程仓库
+     */
+    const selectRemote = async (
+        repositoryRoot: string,
+        placeHolder: string
+    ): Promise<{ action: 'select'; remote: string } | { action: 'back' } | undefined> => {
+        const remotes = await TagService.getRemotes(repositoryRoot);
+        if (remotes.length === 0) {
+            vscode.window.showWarningMessage('当前仓库没有配置远程仓库');
+            return { action: 'back' };
+        }
+
+        const selected = await vscode.window.showQuickPick(
+            [
+                ...remotes.map(remote => ({
+                    label: remote,
+                    action: 'select' as const,
+                    remote
+                })),
+                {
+                    label: '$(arrow-left) 返回上一级',
+                    action: 'back' as const,
+                    remote: ''
+                }
+            ],
+            { placeHolder, ignoreFocusOut: false }
+        );
+        if (!selected) {
+            return undefined;
+        }
+        return selected.action === 'back'
+            ? { action: 'back' }
+            : { action: 'select', remote: selected.remote };
+    };
+
+    /**
+     * 创建 Git 标记
+     */
+    const createTag = async (repositoryRoot: string): Promise<'back' | 'done'> => {
+        type CreateStep = 'type' | 'target' | 'name' | 'message';
+
+        let step: CreateStep = 'type';
+        let tagType: TagType | undefined;
+        let target: string | undefined;
+        let tagName: string | undefined;
+        const branches = await TagService.getLocalBranches(repositoryRoot);
+
+        while (true) {
+            if (step === 'type') {
+                const selected = await vscode.window.showQuickPick(
+                    [
+                        {
+                            label: '$(tag) 附注标记',
+                            detail: '包含创建者、创建时间和标记说明',
+                            value: 'annotated' as TagType
+                        },
+                        {
+                            label: '$(bookmark) 轻量标记',
+                            detail: '仅作为指向提交的名称',
+                            value: 'lightweight' as TagType
+                        },
+                        {
+                            label: '$(arrow-left) 返回上一级',
+                            detail: '返回标记管理',
+                            value: 'back' as const
+                        }
+                    ],
+                    { placeHolder: '选择标记类型', ignoreFocusOut: false }
+                );
+                if (!selected) {
+                    return 'done';
+                }
+                if (selected.value === 'back') {
+                    return 'back';
+                }
+                tagType = selected.value;
+                step = 'target';
+                continue;
+            }
+
+            if (step === 'target') {
+                const selected = await vscode.window.showQuickPick(
+                    [
+                        {
+                            label: '$(git-commit) 当前分支最新提交',
+                            description: 'HEAD',
+                            target: 'HEAD',
+                            isBack: false
+                        },
+                        ...branches.map(branch => ({
+                            label: `$(git-branch) ${branch}`,
+                            description: '本地分支最新提交',
+                            target: branch,
+                            isBack: false
+                        })),
+                        {
+                            label: '$(arrow-left) 返回上一级',
+                            description: '重新选择标记类型',
+                            target: '',
+                            isBack: true
+                        }
+                    ],
+                    { placeHolder: '选择标记指向的提交', ignoreFocusOut: false }
+                );
+                if (!selected) {
+                    return 'done';
+                }
+                if (selected.isBack) {
+                    step = 'type';
+                    continue;
+                }
+                target = selected.target;
+                step = 'name';
+                continue;
+            }
+
+            if (step === 'name') {
+                const inputName = await vscode.window.showInputBox({
+                    prompt: '请输入标记名称（按 Esc 返回目标选择）',
+                    placeHolder: tagName || '例如：v1.0.0',
+                    value: tagName,
+                    ignoreFocusOut: false,
+                    validateInput: value => value.trim() ? undefined : '标记名称不能为空'
+                });
+                if (inputName === undefined) {
+                    step = 'target';
+                    continue;
+                }
+
+                if (!await TagService.isValidTagName(repositoryRoot, inputName)) {
+                    vscode.window.showErrorMessage(`标记名称“${inputName}”不符合 Git 命名规则`);
+                    continue;
+                }
+
+                const localTags = await TagService.getLocalTags(repositoryRoot);
+                if (localTags.includes(inputName)) {
+                    vscode.window.showErrorMessage(`本地标记“${inputName}”已存在`);
+                    continue;
+                }
+
+                tagName = inputName;
+                if (tagType === 'annotated') {
+                    step = 'message';
+                    continue;
+                }
+            }
+
+            if (step === 'message') {
+                const message = await vscode.window.showInputBox({
+                    prompt: '请输入附注标记说明（按 Esc 返回标记名称输入）',
+                    placeHolder: `发布 ${tagName}`,
+                    ignoreFocusOut: false,
+                    validateInput: value => value.trim() ? undefined : '附注标记说明不能为空'
+                });
+                if (message === undefined) {
+                    step = 'name';
+                    continue;
+                }
+
+                await TagService.createTag(
+                    repositoryRoot,
+                    tagName!,
+                    tagType!,
+                    target!,
+                    message.trim()
+                );
+            } else {
+                await TagService.createTag(repositoryRoot, tagName!, tagType!, target!);
+            }
+
+            vscode.window.showInformationMessage(`标记“${tagName}”创建成功`);
+            return 'done';
+        }
+    };
+
+    /**
+     * 删除本地 Git 标记
+     */
+    const deleteLocalTags = async (repositoryRoot: string): Promise<'back' | 'done'> => {
+        const tags = await TagService.getLocalTags(repositoryRoot);
+        if (tags.length === 0) {
+            vscode.window.showWarningMessage('当前仓库没有本地标记');
+            return 'back';
+        }
+
+        const selected = await vscode.window.showQuickPick(
+            [
+                ...tags.map(tag => ({ label: tag, tag, isBack: false })),
+                {
+                    label: '$(arrow-left) 返回上一级',
+                    tag: '',
+                    isBack: true
+                }
+            ],
+            {
+                placeHolder: '选择要删除的本地标记（可多选）',
+                canPickMany: true,
+                ignoreFocusOut: false
+            }
+        );
+        if (!selected || selected.length === 0) {
+            return 'done';
+        }
+        if (selected.some(item => item.isBack)) {
+            return 'back';
+        }
+
+        const tagNames = selected.map(item => item.tag);
+        const confirmation = await vscode.window.showWarningMessage(
+            `确定删除 ${tagNames.length} 个本地标记吗？\n${tagNames.join('、')}`,
+            { modal: true },
+            '确认删除'
+        );
+        if (confirmation !== '确认删除') {
+            return 'done';
+        }
+
+        await TagService.deleteLocalTags(repositoryRoot, tagNames);
+        vscode.window.showInformationMessage(`已删除 ${tagNames.length} 个本地标记`);
+        return 'done';
+    };
+
+    /**
+     * 删除远程 Git 标记
+     */
+    const deleteRemoteTags = async (repositoryRoot: string): Promise<'back' | 'done'> => {
+        while (true) {
+            const remoteSelection = await selectRemote(repositoryRoot, '选择要删除标记的远程仓库');
+            if (!remoteSelection) {
+                return 'done';
+            }
+            if (remoteSelection.action === 'back') {
+                return 'back';
+            }
+            const remote = remoteSelection.remote;
+
+            const tags = await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title: `正在获取远程仓库“${remote}”的标记`,
+                    cancellable: false
+                },
+                () => TagService.getRemoteTags(repositoryRoot, remote)
+            );
+            if (tags.length === 0) {
+                vscode.window.showWarningMessage(`远程仓库“${remote}”没有标记`);
+                continue;
+            }
+
+            const selected = await vscode.window.showQuickPick(
+                [
+                    ...tags.map(tag => ({ label: tag, tag, isBack: false })),
+                    {
+                        label: '$(arrow-left) 返回上一级',
+                        tag: '',
+                        isBack: true
+                    }
+                ],
+                {
+                    placeHolder: `选择要从“${remote}”删除的标记（可多选）`,
+                    canPickMany: true,
+                    ignoreFocusOut: false
+                }
+            );
+            if (!selected || selected.length === 0) {
+                return 'done';
+            }
+            if (selected.some(item => item.isBack)) {
+                continue;
+            }
+
+            const tagNames = selected.map(item => item.tag);
+            const confirmation = await vscode.window.showWarningMessage(
+                `确定从远程仓库“${remote}”删除 ${tagNames.length} 个标记吗？\n${tagNames.join('、')}`,
+                { modal: true },
+                '确认删除'
+            );
+            if (confirmation !== '确认删除') {
+                return 'done';
+            }
+
+            await TagService.deleteRemoteTags(repositoryRoot, remote, tagNames);
+            vscode.window.showInformationMessage(
+                `已从远程仓库“${remote}”删除 ${tagNames.length} 个标记`
+            );
+            return 'done';
+        }
+    };
+
+    /**
+     * 推送全部本地 Git 标记
+     */
+    const pushAllTags = async (repositoryRoot: string): Promise<'back' | 'done'> => {
+        const remoteSelection = await selectRemote(repositoryRoot, '选择要推送标记的远程仓库');
+        if (!remoteSelection) {
+            return 'done';
+        }
+        if (remoteSelection.action === 'back') {
+            return 'back';
+        }
+        const remote = remoteSelection.remote;
+
+        const localTags = await TagService.getLocalTags(repositoryRoot);
+        if (localTags.length === 0) {
+            vscode.window.showWarningMessage('当前仓库没有可推送的本地标记');
+            return 'back';
+        }
+
+        const remoteTags = await vscode.window.withProgress(
+            {
+                location: vscode.ProgressLocation.Notification,
+                title: `正在获取远程仓库“${remote}”的标记`,
+                cancellable: false
+            },
+            () => TagService.getRemoteTags(repositoryRoot, remote)
+        );
+        const remoteTagSet = new Set(remoteTags);
+        const newTagCount = localTags.filter(tag => !remoteTagSet.has(tag)).length;
+
+        const confirmation = await vscode.window.showWarningMessage(
+            `确定向远程仓库“${remote}”推送全部 ${localTags.length} 个本地标记吗？`
+                + ` 其中 ${newTagCount} 个标记名称尚不存在于远程仓库。`,
+            { modal: true },
+            '确认推送'
+        );
+        if (confirmation !== '确认推送') {
+            return 'done';
+        }
+
+        await vscode.window.withProgress(
+            {
+                location: vscode.ProgressLocation.Notification,
+                title: `正在向“${remote}”推送全部本地标记`,
+                cancellable: false
+            },
+            () => TagService.pushAllTags(repositoryRoot, remote)
+        );
+        vscode.window.showInformationMessage(`本地标记已推送到远程仓库“${remote}”`);
+        return 'done';
+    };
+
+    /**
+     * Git 标记管理面板
+     */
+    const showTagManagement = async (repositoryRoot: string): Promise<'back' | 'done'> => {
+        while (true) {
+            const selected = await vscode.window.showQuickPick(
+                [
+                    {
+                        label: '$(add) 创建标记',
+                        detail: '创建轻量标记或附注标记',
+                        value: 'create'
+                    },
+                    {
+                        label: '$(trash) 删除本地标记',
+                        detail: '选择一个或多个本地标记进行删除',
+                        value: 'delete-local'
+                    },
+                    {
+                        label: '$(cloud) 删除远程标记',
+                        detail: '实时获取并删除指定远程仓库中的标记',
+                        value: 'delete-remote'
+                    },
+                    {
+                        label: '$(cloud-upload) 推送全部标记',
+                        detail: '将全部本地标记推送到指定远程仓库',
+                        value: 'push-all'
+                    },
+                    {
+                        label: '$(arrow-left) 返回上一级',
+                        detail: '返回提交代码或标记管理选择',
+                        value: 'back'
+                    }
+                ],
+                { placeHolder: '选择标记操作', ignoreFocusOut: false }
+            );
+            if (!selected) {
+                return 'done';
+            }
+            if (selected.value === 'back') {
+                return 'back';
+            }
+
+            try {
+                let result: 'back' | 'done';
+                switch (selected.value) {
+                    case 'create':
+                        result = await createTag(repositoryRoot);
+                        break;
+                    case 'delete-local':
+                        result = await deleteLocalTags(repositoryRoot);
+                        break;
+                    case 'delete-remote':
+                        result = await deleteRemoteTags(repositoryRoot);
+                        break;
+                    case 'push-all':
+                        result = await pushAllTags(repositoryRoot);
+                        break;
+                    default:
+                        return 'done';
+                }
+
+                if (result === 'back') {
+                    continue;
+                }
+                return 'done';
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                vscode.window.showErrorMessage(`标记操作失败：${errorMessage}`);
+            }
         }
     };
 
@@ -523,23 +975,56 @@ export function activate(context: vscode.ExtensionContext) {
         // 如果有多个仓库，可以根据 uri 查找对应的仓库
         if (uri) {
             const repositories = gitExtension.getAPI(1).repositories;
+            const requestedRootPath = uri._rootUri?.path || uri.rootUri?.path;
             repo = repositories.find((r: any) => {
-                return r.rootUri.path === uri._rootUri?.path;
+                return r.rootUri.path === requestedRootPath;
             }) || repo;
         }
 
-        // 保存当前文件路径（用于后续获取版本号）
-        const activeEditor = vscode.window.activeTextEditor;
-        currentFilePath = activeEditor?.document.uri.fsPath || uri?.fsPath;
+        while (true) {
+            const selectedOperation = await vscode.window.showQuickPick(
+                [
+                    {
+                        label: '$(git-commit) 提交代码',
+                        detail: '使用现有规范化 Git 提交流程',
+                        value: 'commit'
+                    },
+                    {
+                        label: '$(tag) 标记管理',
+                        detail: '创建、删除或推送 Git 标记',
+                        value: 'tag'
+                    }
+                ],
+                { placeHolder: '请选择要执行的操作', ignoreFocusOut: false }
+            );
+            if (!selectedOperation) {
+                return;
+            }
 
-        // 先询问是否需要创建配置文件
-        await askAndCreateConfig();
+            if (selectedOperation.value === 'commit') {
+                // 保存当前文件路径（用于后续获取版本号）
+                const activeEditor = vscode.window.activeTextEditor;
+                currentFilePath = activeEditor?.document.uri.fsPath || uri?.fsPath;
 
-        // 检查配置文件并让用户选择项目（如果是多项目配置）
-        await checkAndSelectProject();
+                // 先询问是否需要创建配置文件
+                await askAndCreateConfig();
 
-        // 直接进入 Commit 流程
-        await selectTemplate();
+                // 检查配置文件并让用户选择项目（如果是多项目配置）
+                await checkAndSelectProject();
+
+                const navigation = await selectTemplate();
+                if (navigation === 'back') {
+                    continue;
+                }
+                return;
+            }
+
+            const navigation = await showTagManagement(repo.rootUri.fsPath);
+            if (navigation === 'back') {
+                continue;
+            }
+            return;
+        }
     });
 
     context.subscriptions.push(disposable);
