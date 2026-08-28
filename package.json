@@ -2,7 +2,7 @@
   "name": "odinsam-gitcommit",
   "displayName": "gitcommit",
   "description": "规范化 Git 提交信息，支持 Angular 格式和自定义模板，自动获取版本号",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "engines": {
     "vscode": "^1.74.0"
   },
@@ -161,12 +161,16 @@
     "watch": "tsc -watch -p ./",
     "package": "vsce package",
     "prepackage": "npm run compile",
-    "package:publish":"vsce package --baseContentUrl https://gitee.com/odinsam/vse_git-commit --baseImagesUrl https://gitee.com/odinsam/vse_git-commit --allow-missing-repository"
+    "package:publish": "vsce package --baseContentUrl https://gitee.com/odinsam/vse_git-commit --baseImagesUrl https://gitee.com/odinsam/vse_git-commit --allow-missing-repository"
+  },
+  "vsce": {
+    "baseContentUrl": "https://gitee.com/odinsam/vse_git-commit/raw/master",
+    "baseImagesUrl": "https://gitee.com/odinsam/vse_git-commit/raw/master"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.74.0",
-    "@vscode/vsce": "^2.22.0",
+    "@vscode/vsce": "^3.9.2",
     "typescript": "^5.0.0"
   }
 }
